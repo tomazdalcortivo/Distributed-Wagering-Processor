@@ -11,3 +11,4 @@ export interface MetricsPort {
   observeProcessingLatencyMs(operation: string, durationMs: number): void;
   getSnapshot(): Record<string, unknown>;
 }
+export const MetricsPort = METRICS_PORT;

@@ -74,3 +74,4 @@ export interface UnitOfWorkPort {
   runInTransaction<T>(work: (ctx: TransactionalContext) => Promise<T>): Promise<T>;
   getReadContext(): TransactionalContext;
 }
+export const UnitOfWorkPort = UNIT_OF_WORK_PORT;

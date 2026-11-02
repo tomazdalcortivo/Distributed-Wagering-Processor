@@ -14,3 +14,4 @@ export const PROVIDER_IDENTITY_PORT = Symbol('PROVIDER_IDENTITY_PORT');
 export interface ProviderIdentityPort {
   authenticateRequest(headers: Record<string, string | string[] | undefined>): Promise<AuthenticatedProviderPrincipal>;
 }
+export const ProviderIdentityPort = PROVIDER_IDENTITY_PORT;
