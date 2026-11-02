@@ -23,7 +23,7 @@ import {
 import { InvalidTransactionContractError } from '../../../domain/shared/domain-errors';
 import { MoneyProps } from '../../../domain/value-objects/money';
 
-export interface SubmitWagerTransactionBody {
+export class SubmitWagerTransactionBody {
   providerId: string;
   externalTransactionId: string;
   playerId: string;

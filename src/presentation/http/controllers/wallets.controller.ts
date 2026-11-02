@@ -25,7 +25,7 @@ import {
 import { InvalidTransactionContractError } from '../../../domain/shared/domain-errors';
 import { MoneyProps } from '../../../domain/value-objects/money';
 
-export interface CreateWalletRequestBody {
+export class CreateWalletRequestBody {
   playerId: string;
   initialBalance: MoneyProps;
 }
