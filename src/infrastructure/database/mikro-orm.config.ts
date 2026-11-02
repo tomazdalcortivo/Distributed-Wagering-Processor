@@ -18,7 +18,7 @@ export function buildMikroOrmConfig() {
     password: process.env.DB_PASSWORD ?? 'jungle_secret',
     pool: {
       min: Number(process.env.DB_POOL_MIN ?? 2),
-      max: Number(process.env.DB_POOL_MAX ?? 20),
+      max: Number(process.env.DB_POOL_MAX ?? 60),
     },
     entities: [
       WalletEntitySchema,

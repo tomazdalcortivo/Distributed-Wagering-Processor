@@ -1,14 +1,14 @@
-import { EntityManager, LockMode } from '@mikro-orm/postgresql';
+import { EntityManager } from '@mikro-orm/postgresql';
 import { Injectable } from '@nestjs/common';
 import {
-  InboxRepositoryPort,
-  LedgerPageResult,
-  OutboxRepositoryPort,
-  TransactionalContext,
-  UnitOfWorkPort,
-  WagerTransactionRepositoryPort,
-  WalletLedgerRepositoryPort,
-  WalletRepositoryPort,
+  type InboxRepositoryPort,
+  type LedgerPageResult,
+  type OutboxRepositoryPort,
+  type TransactionalContext,
+  type UnitOfWorkPort,
+  type WagerTransactionRepositoryPort,
+  type WalletLedgerRepositoryPort,
+  type WalletRepositoryPort,
 } from '../../application/ports/unit-of-work.port';
 import { InboxMessage } from '../../domain/entities/inbox-message';
 import { OutboxMessage } from '../../domain/entities/outbox-message';
@@ -28,38 +28,54 @@ import {
 } from '../../domain/shared/domain-errors';
 import { FailureCode } from '../../domain/shared/failure-code';
 import { Money } from '../../domain/value-objects/money';
-import {
-  InboxMessageOrmRecord,
-  OutboxMessageOrmRecord,
-  WagerTransactionOrmRecord,
-  WalletLedgerEntryOrmRecord,
-  WalletOrmRecord,
-} from './entities/orm-entities';
+
+function execSql<T = Record<string, unknown>[]>(
+  em: EntityManager,
+  sql: string,
+  params: unknown[] = [],
+  method: 'all' | 'get' | 'run' = 'all',
+): Promise<T> {
+  return em
+    .getConnection()
+    .execute(sql, params, method, em.getTransactionContext()) as Promise<T>;
+}
 
 class MikroOrmWalletRepository implements WalletRepositoryPort {
   constructor(private readonly em: EntityManager) {}
 
   async findById(id: string): Promise<Wallet | null> {
-    const row = await this.em.findOne(WalletOrmRecord, { id });
-    return row ? this.toDomain(row) : null;
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT * FROM wallets WHERE id = ? LIMIT 1`,
+      [id],
+      'all',
+    );
+    return rows && rows.length > 0 ? this.rawRowToDomain(rows[0]!) : null;
   }
 
   async findByIdForUpdate(id: string): Promise<Wallet | null> {
-    const row = await this.em.findOne(
-      WalletOrmRecord,
-      { id },
-      { lockMode: LockMode.PESSIMISTIC_WRITE },
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT * FROM wallets WHERE id = ? LIMIT 1 FOR UPDATE`,
+      [id],
+      'all',
     );
-    return row ? this.toDomain(row) : null;
+    return rows && rows.length > 0 ? this.rawRowToDomain(rows[0]!) : null;
   }
 
   async findByPlayerAndCurrency(playerId: string, currency: string): Promise<Wallet | null> {
-    const row = await this.em.findOne(WalletOrmRecord, { playerId, currency });
-    return row ? this.toDomain(row) : null;
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT * FROM wallets WHERE player_id = ? AND currency = ? LIMIT 1`,
+      [playerId, currency],
+      'all',
+    );
+    return rows && rows.length > 0 ? this.rawRowToDomain(rows[0]!) : null;
   }
 
   async insert(wallet: Wallet): Promise<void> {
-    await this.em.getConnection().execute(
+    await execSql(
+      this.em,
       `INSERT INTO wallets (id, player_id, currency, balance_amount, version, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -71,11 +87,13 @@ class MikroOrmWalletRepository implements WalletRepositoryPort {
         wallet.createdAt,
         wallet.updatedAt,
       ],
+      'run',
     );
   }
 
   async updateWithVersion(wallet: Wallet, expectedVersion: number): Promise<void> {
-    const res = await this.em.getConnection().execute<{ affectedRows?: number }>(
+    const res = await execSql<{ affectedRows?: number }>(
+      this.em,
       `UPDATE wallets
        SET balance_amount = ?, version = ?, updated_at = ?
        WHERE id = ? AND version = ?`,
@@ -94,18 +112,19 @@ class MikroOrmWalletRepository implements WalletRepositoryPort {
     }
   }
 
-  private toDomain(row: WalletOrmRecord): Wallet {
+  private rawRowToDomain(raw: Record<string, unknown>): Wallet {
+    const currency = String(raw.currency);
     return Wallet.rehydrate({
-      id: row.id,
-      playerId: row.playerId,
-      currency: row.currency,
+      id: String(raw.id),
+      playerId: String(raw.player_id),
+      currency,
       balance: Money.rehydrate({
-        amount: row.balanceAmount,
-        currency: row.currency,
+        amount: String(raw.balance_amount),
+        currency,
       }),
-      version: Number(row.version),
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
+      version: Number(raw.version),
+      createdAt: new Date(raw.created_at as string | Date),
+      updatedAt: new Date(raw.updated_at as string | Date),
     });
   }
 }
@@ -114,39 +133,53 @@ class MikroOrmWagerTransactionRepository implements WagerTransactionRepositoryPo
   constructor(private readonly em: EntityManager) {}
 
   async findById(id: string): Promise<WagerTransaction | null> {
-    const row = await this.em.findOne(WagerTransactionOrmRecord, { id });
-    return row ? this.toDomain(row) : null;
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT * FROM wager_transactions WHERE id = ? LIMIT 1`,
+      [id],
+      'all',
+    );
+    return rows && rows.length > 0 ? this.rawRowToDomain(rows[0]!) : null;
   }
 
   async findByIdForUpdate(id: string): Promise<WagerTransaction | null> {
-    const row = await this.em.findOne(
-      WagerTransactionOrmRecord,
-      { id },
-      { lockMode: LockMode.PESSIMISTIC_WRITE },
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT * FROM wager_transactions WHERE id = ? LIMIT 1 FOR UPDATE`,
+      [id],
+      'all',
     );
-    return row ? this.toDomain(row) : null;
+    return rows && rows.length > 0 ? this.rawRowToDomain(rows[0]!) : null;
   }
 
   async findByIdempotencyKey(idempotencyKey: string): Promise<WagerTransaction | null> {
-    const row = await this.em.findOne(WagerTransactionOrmRecord, { idempotencyKey });
-    return row ? this.toDomain(row) : null;
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT * FROM wager_transactions WHERE idempotency_key = ? LIMIT 1`,
+      [idempotencyKey],
+      'all',
+    );
+    return rows && rows.length > 0 ? this.rawRowToDomain(rows[0]!) : null;
   }
 
   async findByProviderAndExternalId(
     providerId: string,
     externalTransactionId: string,
   ): Promise<WagerTransaction | null> {
-    const row = await this.em.findOne(WagerTransactionOrmRecord, {
-      providerId,
-      externalTransactionId,
-    });
-    return row ? this.toDomain(row) : null;
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT * FROM wager_transactions WHERE provider_id = ? AND external_transaction_id = ? LIMIT 1`,
+      [providerId, externalTransactionId],
+      'all',
+    );
+    return rows && rows.length > 0 ? this.rawRowToDomain(rows[0]!) : null;
   }
 
   async findProcessedReversalForReference(
     referenceTransactionId: string,
   ): Promise<WagerTransaction | null> {
-    const rows = await this.em.getConnection().execute<Record<string, unknown>[]>(
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
       `SELECT *
        FROM wager_transactions
        WHERE reference_transaction_id = ?
@@ -161,7 +194,8 @@ class MikroOrmWagerTransactionRepository implements WagerTransactionRepositoryPo
   }
 
   async claimDuePendingReferences(now: Date, limit: number): Promise<WagerTransaction[]> {
-    const rows = await this.em.getConnection().execute<Record<string, unknown>[]>(
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
       `SELECT *
        FROM wager_transactions
        WHERE status = 'PENDING_REFERENCE'
@@ -176,7 +210,8 @@ class MikroOrmWagerTransactionRepository implements WagerTransactionRepositoryPo
   }
 
   async insert(tx: WagerTransaction): Promise<void> {
-    await this.em.getConnection().execute(
+    await execSql(
+      this.em,
       `INSERT INTO wager_transactions (
         id, provider_id, external_transaction_id, idempotency_key, payload_hash,
         wallet_id, player_id, round_id, game_id, kind, amount, currency, status,
@@ -207,11 +242,13 @@ class MikroOrmWagerTransactionRepository implements WagerTransactionRepositoryPo
         tx.createdAt,
         tx.processedAt ?? null,
       ],
+      'run',
     );
   }
 
   async update(tx: WagerTransaction): Promise<void> {
-    await this.em.getConnection().execute(
+    await execSql(
+      this.em,
       `UPDATE wager_transactions
        SET status = ?,
            reference_transaction_id = ?,
@@ -231,40 +268,8 @@ class MikroOrmWagerTransactionRepository implements WagerTransactionRepositoryPo
         tx.processedAt ?? null,
         tx.id,
       ],
+      'run',
     );
-  }
-
-  private toDomain(row: WagerTransactionOrmRecord): WagerTransaction {
-    return WagerTransaction.rehydrate({
-      id: row.id,
-      providerId: row.providerId,
-      externalTransactionId: row.externalTransactionId,
-      idempotencyKey: row.idempotencyKey,
-      payloadHash: row.payloadHash,
-      walletId: row.walletId,
-      playerId: row.playerId,
-      roundId: row.roundId,
-      gameId: row.gameId,
-      kind: row.kind as WagerTransactionKind,
-      money: Money.rehydrate({
-        amount: row.amount,
-        currency: row.currency,
-      }),
-      referenceExternalTransactionId: row.referenceExternalTransactionId ?? undefined,
-      createdAt: new Date(row.createdAt),
-      status: row.status as WagerTransactionStatus,
-      referenceTransactionId: row.referenceTransactionId ?? undefined,
-      observedBalance: row.observedBalanceAmount
-        ? Money.rehydrate({
-            amount: row.observedBalanceAmount,
-            currency: row.currency,
-          })
-        : undefined,
-      failureCode: (row.failureCode as FailureCode | null) ?? undefined,
-      processedAt: row.processedAt ? new Date(row.processedAt) : undefined,
-      retryCount: Number(row.retryCount ?? 0),
-      nextRetryAt: row.nextRetryAt ? new Date(row.nextRetryAt) : undefined,
-    });
   }
 
   private rawRowToDomain(raw: Record<string, unknown>): WagerTransaction {
@@ -308,7 +313,8 @@ class MikroOrmWalletLedgerRepository implements WalletLedgerRepositoryPort {
   constructor(private readonly em: EntityManager) {}
 
   async insert(entry: WalletLedgerEntry): Promise<void> {
-    await this.em.getConnection().execute(
+    await execSql(
+      this.em,
       `INSERT INTO wallet_ledger_entries (
         id, wallet_id, transaction_id, direction, amount, currency,
         balance_before, balance_after, created_at
@@ -324,17 +330,20 @@ class MikroOrmWalletLedgerRepository implements WalletLedgerRepositoryPort {
         entry.balanceAfter.amount,
         entry.createdAt,
       ],
+      'run',
     );
   }
 
   async findByTransactionId(transactionId: string): Promise<WalletLedgerEntry | null> {
-    const row = await this.em.findOne(WalletLedgerEntryOrmRecord, { transactionId });
-    return row ? this.toDomain(row) : null;
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT * FROM wallet_ledger_entries WHERE transaction_id = ? LIMIT 1`,
+      [transactionId],
+      'all',
+    );
+    return rows && rows.length > 0 ? this.rawRowToDomain(rows[0]!) : null;
   }
 
-  /**
-   * Lists ledger entries for a wallet using an opaque, stable base64url cursor (`seq:<sequence_number>`).
-   */
   async listByWalletCursor(
     walletId: string,
     cursor: string | undefined,
@@ -347,7 +356,8 @@ class MikroOrmWalletLedgerRepository implements WalletLedgerRepositoryPort {
 
     const fetchLimit = limit + 1;
     const rows = beforeSequence
-      ? await this.em.getConnection().execute<Record<string, unknown>[]>(
+      ? await execSql<Record<string, unknown>[]>(
+          this.em,
           `SELECT *
            FROM wallet_ledger_entries
            WHERE wallet_id = ? AND sequence_number < ?
@@ -356,7 +366,8 @@ class MikroOrmWalletLedgerRepository implements WalletLedgerRepositoryPort {
           [walletId, beforeSequence.toString(), fetchLimit],
           'all',
         )
-      : await this.em.getConnection().execute<Record<string, unknown>[]>(
+      : await execSql<Record<string, unknown>[]>(
+          this.em,
           `SELECT *
            FROM wallet_ledger_entries
            WHERE wallet_id = ?
@@ -379,7 +390,8 @@ class MikroOrmWalletLedgerRepository implements WalletLedgerRepositoryPort {
   }
 
   async getAllByWalletOrdered(walletId: string): Promise<WalletLedgerEntry[]> {
-    const rows = await this.em.getConnection().execute<Record<string, unknown>[]>(
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
       `SELECT *
        FROM wallet_ledger_entries
        WHERE wallet_id = ?
@@ -404,26 +416,6 @@ class MikroOrmWalletLedgerRepository implements WalletLedgerRepositoryPort {
     } catch {
       throw new InvalidTransactionContractError(`Invalid pagination cursor "${cursor}"`);
     }
-  }
-
-  private toDomain(row: WalletLedgerEntryOrmRecord): WalletLedgerEntry {
-    return WalletLedgerEntry.rehydrate({
-      id: row.id,
-      walletId: row.walletId,
-      transactionId: row.transactionId,
-      direction: row.direction as LedgerDirection,
-      money: Money.rehydrate({ amount: row.amount, currency: row.currency }),
-      balanceBefore: Money.rehydrate({
-        amount: row.balanceBefore,
-        currency: row.currency,
-      }),
-      balanceAfter: Money.rehydrate({
-        amount: row.balanceAfter,
-        currency: row.currency,
-      }),
-      createdAt: new Date(row.createdAt),
-      sequenceNumber: row.sequenceNumber ? BigInt(row.sequenceNumber) : undefined,
-    });
   }
 
   private rawRowToDomain(raw: Record<string, unknown>): WalletLedgerEntry {
@@ -458,23 +450,30 @@ class MikroOrmInboxRepository implements InboxRepositoryPort {
     consumerName: string,
     messageId: string,
   ): Promise<InboxMessage | null> {
-    const row = await this.em.findOne(
-      InboxMessageOrmRecord,
-      { consumerName, messageId },
-      { lockMode: LockMode.PESSIMISTIC_WRITE },
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
+      `SELECT *
+       FROM inbox_messages
+       WHERE consumer_name = ? AND message_id = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [consumerName, messageId],
+      'all',
     );
-    if (!row) return null;
+    if (!rows || rows.length === 0) return null;
+    const raw = rows[0]!;
     return InboxMessage.rehydrate({
-      consumerName: row.consumerName,
-      messageId: row.messageId,
-      payloadHash: row.payloadHash,
-      receivedAt: new Date(row.receivedAt),
-      processedAt: row.processedAt ? new Date(row.processedAt) : undefined,
+      consumerName: String(raw.consumer_name),
+      messageId: String(raw.message_id),
+      payloadHash: String(raw.payload_hash),
+      receivedAt: new Date(raw.received_at as string | Date),
+      processedAt: raw.processed_at ? new Date(raw.processed_at as string | Date) : undefined,
     });
   }
 
   async insert(message: InboxMessage): Promise<void> {
-    await this.em.getConnection().execute(
+    await execSql(
+      this.em,
       `INSERT INTO inbox_messages (consumer_name, message_id, payload_hash, received_at, processed_at)
        VALUES (?, ?, ?, ?, ?)`,
       [
@@ -484,15 +483,18 @@ class MikroOrmInboxRepository implements InboxRepositoryPort {
         message.receivedAt,
         message.processedAt ?? null,
       ],
+      'run',
     );
   }
 
   async update(message: InboxMessage): Promise<void> {
-    await this.em.getConnection().execute(
+    await execSql(
+      this.em,
       `UPDATE inbox_messages
        SET processed_at = ?
        WHERE consumer_name = ? AND message_id = ?`,
       [message.processedAt ?? null, message.consumerName, message.messageId],
+      'run',
     );
   }
 }
@@ -502,7 +504,8 @@ class MikroOrmOutboxRepository implements OutboxRepositoryPort {
 
   async insertMany(messages: OutboxMessage[]): Promise<void> {
     for (const msg of messages) {
-      await this.em.getConnection().execute(
+      await execSql(
+        this.em,
         `INSERT INTO outbox_messages (
           id, aggregate_id, event_type, payload, occurred_at, attempts, next_attempt_at, published_at
         ) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?)`,
@@ -516,17 +519,14 @@ class MikroOrmOutboxRepository implements OutboxRepositoryPort {
           msg.nextAttemptAt ?? null,
           msg.publishedAt ?? null,
         ],
+        'run',
       );
     }
   }
 
-  /**
-   * Claims due outbox messages using `FOR UPDATE SKIP LOCKED` so multiple concurrent
-   * outbox publisher workers across multiple app instances never block each other
-   * or double-claim the same in-flight batch.
-   */
   async claimPendingBatch(now: Date, limit: number): Promise<OutboxMessage[]> {
-    const rows = await this.em.getConnection().execute<Record<string, unknown>[]>(
+    const rows = await execSql<Record<string, unknown>[]>(
+      this.em,
       `SELECT *
        FROM outbox_messages
        WHERE published_at IS NULL
@@ -560,7 +560,8 @@ class MikroOrmOutboxRepository implements OutboxRepositoryPort {
   }
 
   async update(message: OutboxMessage): Promise<void> {
-    await this.em.getConnection().execute(
+    await execSql(
+      this.em,
       `UPDATE outbox_messages
        SET attempts = ?, next_attempt_at = ?, published_at = ?
        WHERE id = ?`,
@@ -570,11 +571,13 @@ class MikroOrmOutboxRepository implements OutboxRepositoryPort {
         message.publishedAt ?? null,
         message.id,
       ],
+      'run',
     );
   }
 
   async countPendingLag(_now: Date): Promise<number> {
-    const rows = await this.em.getConnection().execute<{ count: string }[]>(
+    const rows = await execSql<{ count: string }[]>(
+      this.em,
       `SELECT COUNT(*)::text AS count
        FROM outbox_messages
        WHERE published_at IS NULL`,
